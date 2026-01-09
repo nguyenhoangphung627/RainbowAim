@@ -1,0 +1,798 @@
+-- DarkForge-X Racket Rival (Small World Games) Hack
+-- Optimized for specific game map and mechanics
+-- One file, all features
+
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local TS = game:GetService("TweenService")
+
+-- Game-specific detection
+local IS_MOBILE = UIS.TouchEnabled
+local GAME_NAME = "Racket Rival"
+local DEVELOPER = "Small World Games"
+
+-- Auto Hit System (optimized for this specific game)
+local AutoHit = {
+    Enabled = false,
+    Power = 750, -- Optimized for Racket Rival physics
+    Range = 25, -- Ideal range for this map
+    Cooldown = 0.25,
+    LastHit = 0,
+    Conn = nil,
+    Stats = {Total = 0, Success = 0, Combo = 0, MaxCombo = 0}
+}
+
+-- Hitbox Expansion System
+local Hitbox = {
+    Enabled = false,
+    Scale = 1.0,
+    MaxScale = 4.0,
+    MinScale = 0.5,
+    OriginalSizes = {},
+    VisualBoxes = {}
+}
+
+-- Find the ball in Racket Rival by Small World Games
+local function FindBall()
+    -- Method 1: Direct search (common in Small World Games)
+    local ball = workspace:FindFirstChild("Ball") 
+                 or workspace:FindFirstChild("RacketBall")
+                 or workspace:FindFirstChild("Shuttlecock")
+    
+    -- Method 2: Search in game workspace structure
+    if not ball then
+        for _, obj in pairs(workspace:GetChildren()) do
+            if obj:IsA("Model") and (obj.Name == "Ball" or obj.Name == "RacketBall") then
+                local primary = obj:FindFirstChild("Handle") or obj:FindFirstChildWhichIsA("BasePart")
+                if primary then return primary end
+            end
+        end
+    end
+    
+    -- Method 3: Look for moving spherical objects (racket rival specific)
+    if not ball then
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and obj.Shape == Enum.PartType.Ball then
+                if obj.Velocity.Magnitude > 2 then -- Only moving balls
+                    return obj
+                end
+            end
+        end
+    end
+    
+    -- Method 4: Search by properties (common in Small World Games)
+    if not ball then
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                -- Small World Games often use "Ball" in name
+                if string.find(obj.Name:lower(), "ball") 
+                   or string.find(obj.Name:lower(), "shuttle")
+                   or string.find(obj.Name:lower(), "birdie") then
+                    return obj
+                end
+            end
+        end
+    end
+    
+    return ball
+end
+
+-- Get racket optimized for Small World Games' Racket Rival
+local function GetRacket()
+    local char = Player.Character
+    if not char then return nil end
+    
+    -- Check equipped tools (Small World Games naming)
+    for _, tool in pairs(char:GetChildren()) do
+        if tool:IsA("Tool") then
+            local name = tool.Name:lower()
+            if name:find("racket") 
+               or name:find("bat") 
+               or name:find("racquet")
+               or name:find("paddle") then
+                return tool
+            end
+        end
+    end
+    
+    -- Check backpack (auto-equip for mobile)
+    for _, tool in pairs(Player.Backpack:GetChildren()) do
+        if tool:IsA("Tool") then
+            local name = tool.Name:lower()
+            if name:find("racket") 
+               or name:find("bat") 
+               or name:find("racquet")
+               or name:find("paddle") then
+                if IS_MOBILE then
+                    tool.Parent = char -- Auto-equip for mobile
+                end
+                return tool
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- Optimized hit for Racket Rival physics
+local function ExecuteAutoHit()
+    if tick() - AutoHit.LastHit < AutoHit.Cooldown then 
+        return false 
+    end
+    
+    local ball = FindBall()
+    local racket = GetRacket()
+    local char = Player.Character
+    
+    if not ball or not racket or not char then 
+        AutoHit.Stats.Combo = 0
+        return false 
+    end
+    
+    local humanoid = char:FindFirstChild("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    
+    if not humanoid or not root then return false end
+    
+    -- Calculate distance
+    local distance = (root.Position - ball.Position).Magnitude
+    
+    -- Optimized for Racket Rival court size
+    if distance > AutoHit.Range then
+        -- Auto positioning for mobile
+        if IS_MOBILE and distance < 40 then
+            local targetPos = ball.Position + Vector3.new(0, 0, -7)
+            humanoid:MoveTo(targetPos)
+        end
+        return false
+    end
+    
+    -- Check ball direction (optimized for game physics)
+    local ballVelocity = ball.Velocity
+    if ballVelocity.Magnitude < 1 then return false end -- Stationary ball
+    
+    local toPlayer = (root.Position - ball.Position).Unit
+    local velocityDir = ballVelocity.Unit
+    local dotProduct = toPlayer:Dot(velocityDir)
+    
+    -- Ball coming towards player (Racket Rival specific threshold)
+    if dotProduct < -0.15 then
+        -- Calculate hit based on court position
+        local hitForce
+        
+        -- Determine court side (Racket Rival specific)
+        local isOnRightSide = ball.Position.X > 0
+        local isOnFrontSide = ball.Position.Z > 0
+        
+        -- Smart hitting based on position
+        if isOnFrontSide then
+            -- Hit to back court (forceful)
+            hitForce = Vector3.new(
+                math.random(-15, 15),
+                22 + (AutoHit.Power * 0.02),
+                -AutoHit.Power * 0.09
+            )
+        else
+            -- Hit to front court (softer)
+            hitForce = Vector3.new(
+                math.random(-10, 10),
+                20 + (AutoHit.Power * 0.015),
+                AutoHit.Power * 0.07
+            )
+        end
+        
+        -- Apply force with Racket Rival physics
+        ball.Velocity = hitForce
+        
+        -- Add realistic spin
+        ball.RotVelocity = Vector3.new(
+            math.random(-80, 80),
+            math.random(-80, 80),
+            math.random(-80, 80)
+        )
+        
+        -- Trigger swing animation/remote
+        local remotes = {
+            racket:FindFirstChildWhichIsA("RemoteEvent"),
+            racket:FindFirstChildWhichIsA("RemoteFunction")
+        }
+        
+        for _, remote in pairs(remotes) do
+            if remote then
+                pcall(function()
+                    if remote:IsA("RemoteEvent") then
+                        remote:FireServer("Swing", ball.Position)
+                    elseif remote:IsA("RemoteFunction") then
+                        remote:InvokeServer("Swing", ball.Position)
+                    end
+                end)
+            end
+        end
+        
+        -- Visual swing animation
+        if racket.Handle then
+            local handle = racket.Handle
+            local originalCF = handle.CFrame
+            
+            -- Up swing
+            local tweenUp = TS:Create(
+                handle,
+                TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                {CFrame = originalCF * CFrame.Angles(math.rad(-35), 0, math.rad(5))}
+            )
+            
+            -- Down swing
+            local tweenDown = TS:Create(
+                handle,
+                TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+                {CFrame = originalCF * CFrame.Angles(math.rad(35), 0, math.rad(-5))}
+            )
+            
+            tweenUp:Play()
+            task.wait(0.06)
+            tweenDown:Play()
+        end
+        
+        -- Update stats
+        AutoHit.LastHit = tick()
+        AutoHit.Stats.Total = AutoHit.Stats.Total + 1
+        AutoHit.Stats.Success = AutoHit.Stats.Success + 1
+        AutoHit.Stats.Combo = AutoHit.Stats.Combo + 1
+        
+        if AutoHit.Stats.Combo > AutoHit.Stats.MaxCombo then
+            AutoHit.Stats.MaxCombo = AutoHit.Stats.Combo
+        end
+        
+        return true
+    end
+    
+    -- Reset combo on miss
+    AutoHit.Stats.Combo = 0
+    return false
+end
+
+-- Toggle auto hit
+function AutoHit:Toggle()
+    self.Enabled = not self.Enabled
+    
+    if self.Enabled then
+        -- Start auto hit
+        self.Conn = RunService.Heartbeat:Connect(ExecuteAutoHit)
+        
+        print("[Racket Rival] Auto Hit: ACTIVATED")
+        print(string.format("  Game: %s by %s", GAME_NAME, DEVELOPER))
+        print(string.format("  Power: %d | Range: %d", self.Power, self.Range))
+    else
+        -- Stop auto hit
+        if self.Conn then
+            self.Conn:Disconnect()
+            self.Conn = nil
+        end
+        
+        print("[Racket Rival] Auto Hit: DEACTIVATED")
+        print(string.format("  Stats: %d hits | %d combo max", 
+            self.Stats.Total, self.Stats.MaxCombo))
+    end
+end
+
+-- Apply hitbox scaling
+function Hitbox:ApplyScale(scale)
+    local racket = GetRacket()
+    if not racket then 
+        print("[Hitbox] No racket found")
+        return false 
+    end
+    
+    -- Save original sizes on first use
+    if not next(self.OriginalSizes) then
+        for _, part in pairs(racket:GetDescendants()) do
+            if part:IsA("BasePart") then
+                self.OriginalSizes[part] = part.Size
+            end
+        end
+    end
+    
+    -- Apply scaling
+    local applied = false
+    for part, originalSize in pairs(self.OriginalSizes) do
+        if part and part.Parent then
+            part.Size = originalSize * scale
+            
+            -- Update or create visualization
+            if self.VisualBoxes[part] then
+                self.VisualBoxes[part]:Destroy()
+            end
+            
+            local selectionBox = Instance.new("SelectionBox")
+            selectionBox.Adornee = part
+            selectionBox.LineThickness = 0.02
+            selectionBox.Color3 = Color3.fromRGB(0, 255, 100) -- Green color
+            selectionBox.Transparency = 0.6
+            selectionBox.Name = "HitboxVisual"
+            selectionBox.Parent = part
+            
+            self.VisualBoxes[part] = selectionBox
+            applied = true
+        end
+    end
+    
+    self.Scale = scale
+    
+    if applied then
+        print(string.format("[Hitbox] Scale applied: %.1fx", scale))
+        return true
+    end
+    
+    return false
+end
+
+-- Expand hitbox
+function Hitbox:Expand()
+    local newScale = math.min(self.Scale * 1.5, self.MaxScale)
+    return self:ApplyScale(newScale)
+end
+
+-- Shrink hitbox
+function Hitbox:Shrink()
+    local newScale = math.max(self.Scale * 0.7, self.MinScale)
+    return self:ApplyScale(newScale)
+end
+
+-- Toggle hitbox
+function Hitbox:Toggle()
+    self.Enabled = not self.Enabled
+    
+    if self.Enabled then
+        if self:ApplyScale(2.0) then
+            print("[Hitbox] Expansion: ACTIVATED")
+        else
+            self.Enabled = false
+            print("[Hitbox] Failed to activate")
+        end
+    else
+        -- Reset to original
+        for part, originalSize in pairs(self.OriginalSizes) do
+            if part and part.Parent then
+                part.Size = originalSize
+                if self.VisualBoxes[part] then
+                    self.VisualBoxes[part]:Destroy()
+                    self.VisualBoxes[part] = nil
+                end
+            end
+        end
+        
+        self.OriginalSizes = {}
+        self.VisualBoxes = {}
+        self.Scale = 1.0
+        
+        print("[Hitbox] Expansion: DEACTIVATED")
+    end
+end
+
+-- Create optimized GUI for Racket Rival
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "RacketRivalHack"
+screenGui.Parent = Player:WaitForChild("PlayerGui")
+
+-- Main control panel
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = IS_MOBILE and UDim2.new(0.85, 0, 0, 220) or UDim2.new(0, 320, 0, 220)
+mainFrame.Position = IS_MOBILE and UDim2.new(0.075, 0, 0.1, 0) or UDim2.new(1, -340, 0.5, -110)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+mainFrame.BorderSizePixel = 0
+mainFrame.Visible = false
+mainFrame.Parent = screenGui
+
+-- Corner radius
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+-- Title bar
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 45)
+titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local title = Instance.new("TextLabel")
+title.Text = "🎾 RACKET RIVAL HACK"
+title.Size = UDim2.new(1, -50, 1, 0)
+title.Position = UDim2.new(0, 15, 0, 0)
+title.BackgroundTransparency = 1
+title.TextColor3 = Color3.fromRGB(0, 200, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = IS_MOBILE and 16 or 14
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = titleBar
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Text = "✕"
+closeBtn.Size = UDim2.new(0, 35, 0, 35)
+closeBtn.Position = UDim2.new(1, -40, 0, 5)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 16
+closeBtn.Parent = titleBar
+
+closeBtn.MouseButton1Click:Connect(function()
+    mainFrame.Visible = false
+end)
+
+-- Content area
+local contentY = 50
+
+-- Auto Hit Button
+local autoHitBtn = Instance.new("TextButton")
+autoHitBtn.Name = "AutoHitBtn"
+autoHitBtn.Text = "⚡ AUTO HIT: OFF"
+autoHitBtn.Size = UDim2.new(0.9, 0, 0, 50)
+autoHitBtn.Position = UDim2.new(0.05, 0, 0, contentY)
+autoHitBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+autoHitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+autoHitBtn.Font = Enum.Font.GothamSemibold
+autoHitBtn.TextSize = IS_MOBILE and 16 or 14
+autoHitBtn.Parent = mainFrame
+
+local autoHitCorner = Instance.new("UICorner")
+autoHitCorner.CornerRadius = UDim.new(0, 8)
+autoHitCorner.Parent = autoHitBtn
+
+contentY = contentY + 55
+
+-- Hitbox Button
+local hitboxBtn = Instance.new("TextButton")
+hitboxBtn.Name = "HitboxBtn"
+hitboxBtn.Text = "📏 HITBOX: OFF"
+hitboxBtn.Size = UDim2.new(0.9, 0, 0, 50)
+hitboxBtn.Position = UDim2.new(0.05, 0, 0, contentY)
+hitboxBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+hitboxBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+hitboxBtn.Font = Enum.Font.GothamSemibold
+hitboxBtn.TextSize = IS_MOBILE and 16 or 14
+hitboxBtn.Parent = mainFrame
+
+local hitboxCorner = Instance.new("UICorner")
+hitboxCorner.CornerRadius = UDim.new(0, 8)
+hitboxCorner.Parent = hitboxBtn
+
+contentY = contentY + 55
+
+-- Quick Actions
+local quickFrame = Instance.new("Frame")
+quickFrame.Size = UDim2.new(0.9, 0, 0, 40)
+quickFrame.Position = UDim2.new(0.05, 0, 0, contentY)
+quickFrame.BackgroundTransparency = 1
+quickFrame.Parent = mainFrame
+
+local expandBtn = Instance.new("TextButton")
+expandBtn.Text = "➕"
+expandBtn.Size = UDim2.new(0.3, 0, 1, 0)
+expandBtn.Position = UDim2.new(0, 0, 0, 0)
+expandBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 60)
+expandBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+expandBtn.Font = Enum.Font.GothamBold
+expandBtn.Parent = quickFrame
+
+local shrinkBtn = Instance.new("TextButton")
+shrinkBtn.Text = "➖"
+shrinkBtn.Size = UDim2.new(0.3, 0, 1, 0)
+shrinkBtn.Position = UDim2.new(0.35, 0, 0, 0)
+shrinkBtn.BackgroundColor3 = Color3.fromRGB(80, 60, 60)
+shrinkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+shrinkBtn.Font = Enum.Font.GothamBold
+shrinkBtn.Parent = quickFrame
+
+local hitNowBtn = Instance.new("TextButton")
+hitNowBtn.Text = "🎯"
+hitNowBtn.Size = UDim2.new(0.3, 0, 1, 0)
+hitNowBtn.Position = UDim2.new(0.7, 0, 0, 0)
+hitNowBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
+hitNowBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+hitNowBtn.Font = Enum.Font.GothamBold
+hitNowBtn.Parent = quickFrame
+
+-- Button events
+autoHitBtn.MouseButton1Click:Connect(function()
+    AutoHit:Toggle()
+    autoHitBtn.Text = "⚡ AUTO HIT: " .. (AutoHit.Enabled and "ON" or "OFF")
+    autoHitBtn.BackgroundColor3 = AutoHit.Enabled and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(50, 50, 70)
+end)
+
+hitboxBtn.MouseButton1Click:Connect(function()
+    Hitbox:Toggle()
+    hitboxBtn.Text = "📏 HITBOX: " .. (Hitbox.Enabled and "ON" or "OFF")
+    hitboxBtn.BackgroundColor3 = Hitbox.Enabled and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(50, 50, 70)
+end)
+
+expandBtn.MouseButton1Click:Connect(function()
+    Hitbox:Expand()
+end)
+
+shrinkBtn.MouseButton1Click:Connect(function()
+    Hitbox:Shrink()
+end)
+
+hitNowBtn.MouseButton1Click:Connect(function()
+    ExecuteAutoHit()
+end)
+
+-- Mobile touch events
+if IS_MOBILE then
+    autoHitBtn.TouchTap:Connect(function()
+        AutoHit:Toggle()
+        autoHitBtn.Text = "⚡ AUTO HIT: " .. (AutoHit.Enabled and "ON" or "OFF")
+        autoHitBtn.BackgroundColor3 = AutoHit.Enabled and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(50, 50, 70)
+    end)
+    
+    hitboxBtn.TouchTap:Connect(function()
+        Hitbox:Toggle()
+        hitboxBtn.Text = "📏 HITBOX: " .. (Hitbox.Enabled and "ON" or "OFF")
+        hitboxBtn.BackgroundColor3 = Hitbox.Enabled and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(50, 50, 70)
+    end)
+end
+
+-- Toggle button (always visible)
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Text = "🎮"
+toggleBtn.Size = IS_MOBILE and UDim2.new(0, 65, 0, 65) or UDim2.new(0, 55, 0, 55)
+toggleBtn.Position = UDim2.new(1, -75, 0, 25)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = IS_MOBILE and 26 or 22
+toggleBtn.ZIndex = 100
+toggleBtn.Parent = screenGui
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(1, 0)
+toggleCorner.Parent = toggleBtn
+
+toggleBtn.MouseButton1Click:Connect(function()
+    mainFrame.Visible = not mainFrame.Visible
+end)
+
+if IS_MOBILE then
+    toggleBtn.TouchTap:Connect(function()
+        mainFrame.Visible = not mainFrame.Visible
+    end)
+end
+
+-- Platform-specific controls
+if IS_PC then
+    -- PC keybinds
+    UIS.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        
+        if input.KeyCode == Enum.KeyCode.F6 then
+            AutoHit:Toggle()
+            autoHitBtn.Text = "⚡ AUTO HIT: " .. (AutoHit.Enabled and "ON" or "OFF")
+            autoHitBtn.BackgroundColor3 = AutoHit.Enabled and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(50, 50, 70)
+            
+            game:GetService("StarterGui"):SetCore("SendNotification", {
+                Title = "Auto Hit",
+                Text = AutoHit.Enabled and "Activated" or "Deactivated",
+                Duration = 2
+            })
+        elseif input.KeyCode == Enum.KeyCode.F7 then
+            Hitbox:Toggle()
+            hitboxBtn.Text = "📏 HITBOX: " .. (Hitbox.Enabled and "ON" or "OFF")
+            hitboxBtn.BackgroundColor3 = Hitbox.Enabled and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(50, 50, 70)
+            
+            game:GetService("StarterGui"):SetCore("SendNotification", {
+                Title = "Hitbox",
+                Text = Hitbox.Enabled and "Expanded" or "Normal",
+                Duration = 2
+            })
+        elseif input.KeyCode == Enum.KeyCode.F5 then
+            mainFrame.Visible = not mainFrame.Visible
+        elseif input.KeyCode == Enum.KeyCode.F8 then
+            ExecuteAutoHit()
+        end
+    end)
+else
+    -- Mobile swipe controls
+    local lastTouchPos
+    UIS.TouchStarted:Connect(function(touch)
+        lastTouchPos = touch.Position
+    end)
+    
+    UIS.TouchEnded:Connect(function(touch)
+        if lastTouchPos then
+            local swipeDist = (touch.Position - lastTouchPos).Magnitude
+            if swipeDist > 50 then
+                local direction = (touch.Position - lastTouchPos).Unit
+                
+                if direction.X > 0.7 then -- Swipe right
+                    ExecuteAutoHit()
+                elseif direction.X < -0.7 then -- Swipe left
+                    Hitbox:Toggle()
+                    hitboxBtn.Text = "📏 HITBOX: " .. (Hitbox.Enabled and "ON" or "OFF")
+                    hitboxBtn.BackgroundColor3 = Hitbox.Enabledand Color3.fromRGB(40, 150, 40) or Color3.fromRGB(50, 50, 70)
+end)
+
+expandBtn.MouseButton1Click:Connect(function()
+    Hitbox:Expand()
+end)
+
+shrinkBtn.MouseButton1Click:Connect(function()
+    Hitbox:Shrink()
+end)
+
+hitNowBtn.MouseButton1Click:Connect(function()
+    ExecuteAutoHit()
+end)
+
+-- Mobile touch events
+if IS_MOBILE then
+    autoHitBtn.TouchTap:Connect(function()
+        AutoHit:Toggle()
+        autoHitBtn.Text = "⚡ AUTO HIT: " .. (AutoHit.Enabled and "ON" or "OFF")
+        autoHitBtn.BackgroundColor3 = AutoHit.Enabled and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(50, 50, 70)
+    end)
+    
+    hitboxBtn.TouchTap:Connect(function()
+        Hitbox:Toggle()
+        hitboxBtn.Text = "📏 HITBOX: " .. (Hitbox.Enabled and "ON" or "OFF")
+        hitboxBtn.BackgroundColor3 = Hitbox.Enabled and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(50, 50, 70)
+    end)
+end
+
+-- Toggle button (always visible)
+local toggleBtn = Instance.new("TextButton")
+toggleBtn.Text = "🎮"
+toggleBtn.Size = IS_MOBILE and UDim2.new(0, 65, 0, 65) or UDim2.new(0, 55, 0, 55)
+toggleBtn.Position = UDim2.new(1, -75, 0, 25)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = IS_MOBILE and 26 or 22
+toggleBtn.ZIndex = 100
+toggleBtn.Parent = screenGui
+
+local toggleCorner = Instance.new("UICorner")
+toggleCorner.CornerRadius = UDim.new(1, 0)
+toggleCorner.Parent = toggleBtn
+
+toggleBtn.MouseButton1Click:Connect(function()
+    mainFrame.Visible = not mainFrame.Visible
+end)
+
+if IS_MOBILE then
+    toggleBtn.TouchTap:Connect(function()
+        mainFrame.Visible = not mainFrame.Visible
+    end)
+end
+
+-- Platform-specific controls
+if IS_PC then
+    -- PC keybinds
+    UIS.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        
+        if input.KeyCode == Enum.KeyCode.F6 then
+            AutoHit:Toggle()
+            autoHitBtn.Text = "⚡ AUTO HIT: " .. (AutoHit.Enabled and "ON" or "OFF")
+            autoHitBtn.BackgroundColor3 = AutoHit.Enabled and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(50, 50, 70)
+            
+            game:GetService("StarterGui"):SetCore("SendNotification", {
+                Title = "Auto Hit",
+                Text = AutoHit.Enabled and "Activated" or "Deactivated",
+                Duration = 2
+            })
+        elseif input.KeyCode == Enum.KeyCode.F7 then
+            Hitbox:Toggle()
+            hitboxBtn.Text = "📏 HITBOX: " .. (Hitbox.Enabled and "ON" or "OFF")
+            hitboxBtn.BackgroundColor3 = Hitbox.Enabled and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(50, 50, 70)
+            
+            game:GetService("StarterGui"):SetCore("SendNotification", {
+                Title = "Hitbox",
+                Text = Hitbox.Enabled and "Expanded" or "Normal",
+                Duration = 2
+            })
+        elseif input.KeyCode == Enum.KeyCode.F5 then
+            mainFrame.Visible = not mainFrame.Visible
+        elseif input.KeyCode == Enum.KeyCode.F8 then
+            ExecuteAutoHit()
+        end
+    end)
+else
+    -- Mobile swipe controls
+    local lastTouchPos
+    UIS.TouchStarted:Connect(function(touch)
+        lastTouchPos = touch.Position
+    end)
+    
+    UIS.TouchEnded:Connect(function(touch)
+        if lastTouchPos then
+            local swipeDist = (touch.Position - lastTouchPos).Magnitude
+            if swipeDist > 50 then
+                local direction = (touch.Position - lastTouchPos).Unit
+                
+                if direction.X > 0.7 then -- Swipe right
+                    ExecuteAutoHit()
+                elseif direction.X < -0.7 then -- Swipe left
+                    Hitbox:Toggle()
+                    hitboxBtn.Text = "📏 HITBOX: " .. (Hitbox.Enabled and "ON" or "OFF")
+                    hitboxBtn.BackgroundColor3 = Hitbox.Enabled and Color3.fromRGB(40, 150, 40) or Color3.fromRGB(50, 50, 70)
+                elseif direction.Y < -0.7 then -- Swipe up
+                    Hitbox:Expand()
+                elseif direction.Y > 0.7 then -- Swipe down
+                    Hitbox:Shrink()
+                end
+            end
+            lastTouchPos = nil
+        end
+    end)
+end
+
+-- Character handling
+Player.CharacterAdded:Connect(function(char)
+    task.wait(1) -- Wait for character to load
+    
+    -- Restore states if needed
+    if autoHitBtn.Text:find("ON") and not AutoHit.Enabled then
+        AutoHit:Toggle()
+    end
+    
+    if hitboxBtn.Text:find("ON") and not Hitbox.Enabled then
+        Hitbox:Toggle()
+    end
+    
+    -- Death handling
+    char:WaitForChild("Humanoid").Died:Connect(function()
+        if AutoHit.Enabled then
+            AutoHit:Toggle()
+            autoHitBtn.Text = "⚡ AUTO HIT: OFF"
+            autoHitBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+        end
+        
+        if Hitbox.Enabled then
+            Hitbox:Toggle()
+            hitboxBtn.Text = "📏 HITBOX: OFF"
+            hitboxBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
+        end
+    end)
+end)
+
+-- Initialization
+task.wait(2)
+
+local welcomeMsg = string.format([[
+╔══════════════════════════════════╗
+║      RACKET RIVAL HACK v1.0      ║
+║      by DarkForge-X              ║
+║                                  ║
+║  Game: %s                ║
+║  Developer: %s     ║
+║  Platform: %s                    ║
+╚══════════════════════════════════╝
+
+Controls:
+%s
+]], 
+GAME_NAME,
+DEVELOPER,
+IS_MOBILE and "Mobile" or "PC",
+IS_MOBILE and "🎮 Button: Open menu\n👉 Swipe right: Auto hit\n👈 Swipe left: Hitbox\n⬆️ Swipe up: Expand\n⬇️ Swipe down: Shrink" 
+or "F5: Open menu\nF6: Toggle Auto Hit\nF7: Toggle Hitbox\nF8: Force hit"
+)
+
+print(welcomeMsg)
+
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "Racket Rival Hack Loaded",
+    Text = IS_MOBILE and "Tap 🎮 for controls\nSwipe gestures enabled" 
+           or "F5: Menu | F6: Auto Hit | F7: Hitbox",
+    Duration = 6,
+    Icon = "rbxassetid://6023426925"
+})
+
+return {
+    AutoHit = AutoHit,
+    Hitbox = Hitbox,
+    ToggleMenu = function() mainFrame.Visible = not mainFrame.Visible end
+}
